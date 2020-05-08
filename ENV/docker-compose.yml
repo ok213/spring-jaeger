@@ -1,0 +1,116 @@
+version: '3.7'
+services:
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.6.2
+        container_name: elasticsearch
+        hostname: elasticsearch
+        environment:
+            - discovery.type=single-node
+            - http.host=0.0.0.0
+            - transport.host=127.0.0.1
+            - ES_JAVA_OPTS=-Xms512m -Xmx512m
+            - xpack.security.enabled=false
+        expose:
+            - "9200"
+            - "9300"
+        ports:
+            - "9200:9200"
+            - "9300:9300"
+        networks:
+            - jaegernet
+        restart: on-failure            
+#        volumes:
+#            - esdata:/usr/share/elasticsearch/data
+#            - ./elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+
+    #
+    # docker run -it --rm -e SPAN_STORAGE_TYPE=elasticsearch jaegertracing/jaeger-collector:1.17 --help
+    #
+    jaeger-collector:
+        image: jaegertracing/jaeger-collector:1.17
+        container_name: jaeger-collector
+        hostname: jaeger-collector
+        environment:
+            - SPAN_STORAGE_TYPE=elasticsearch
+            # - ES_SERVER_URLS=http://elasticsearch:9200
+        command: [
+            "--es.server-urls=http://elasticsearch:9200"
+            ,"--es.num-shards=1"
+            ,"--es.num-replicas=0"
+            ,"--log-level=error"
+        ]
+        ports:
+            - "9411:9411"       # HTTP can accept Zipkin spans in Thrift, JSON and Proto (disabled by default)
+            - "14250"           # gRPC used by jaeger-agent to send spans in model.proto format
+            - "14267"           # TChannel used by jaeger-agent to send spans in jaeger.thrift format
+            - "14268:14268"     # HTTP can accept spans directly from clients in jaeger.thrift format over binary thrift protocol
+            - "14269:14269"     # HTTP admin port: health check at / and metrics at /metrics
+        networks:
+            - jaegernet
+        restart: on-failure
+        depends_on:
+            - elasticsearch
+
+    jaeger-query:
+        image: jaegertracing/jaeger-query:1.17
+        container_name: jaeger-query
+        hostname: jaeger-query
+        environment:
+            - SPAN_STORAGE_TYPE=elasticsearch
+            - no_proxy=localhost
+        command: [
+            "--es.server-urls=http://elasticsearch:9200"
+            ,"--span-storage.type=elasticsearch"
+            ,"--log-level=debug"
+        ]
+        ports:
+            - "16686:16686"
+            - "16687"
+        networks:
+            - jaegernet
+        restart: on-failure
+        depends_on:
+          - jaeger-collector
+
+    jaeger-agent:
+        image: jaegertracing/jaeger-agent:1.17
+        container_name: jaeger-agent
+        hostname: jaeger-agent
+        environment:
+            - SPAN_STORAGE_TYPE=elasticsearch
+        command: [
+            "--collector.host-port=jaeger-collector:14267"
+#            ,"--reporter.grpc.host-port=jaeger-collector:14250"
+        ]
+        ports:
+            - "5775:5775/udp"   # UDP accept zipkin.thrift in compact Thrift protocol (deprecated; only used by very old Jaeger clients, circa 2016)
+            - "6831:6831/udp"   # UDP accept jaeger.thrift in compact Thrift protocol used by most current Jaeger clients
+            - "6832:6832/udp"   # UDP accept jaeger.thrift in binary Thrift protocol used by Node.js Jaeger client (because thriftrw npm package does not support compact protocol)
+            - "5778:5778"       # HTTP serve configs, sampling strategies
+            - "14271:14271"     # HTTP admin port: health check at / and metrics at /metrics
+        networks:
+            - jaegernet
+        restart: on-failure
+        depends_on:
+            - jaeger-collector
+
+    postgres:
+        image: postgres:12.2
+        container_name: postgres
+        hostname: postgres
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+            POSTGRES_DB: test-jaeger
+        ports:
+            - "5432:5432"
+
+# volumes:
+    # esdata:
+        # driver: local
+        # name: "esdata"
+
+networks:
+    jaegernet:
+        driver: bridge
+        name: "jaegernet"

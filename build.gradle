@@ -1,0 +1,42 @@
+group 'org.example'
+version '1.0-SNAPSHOT'
+
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    sourceCompatibility = '11'
+
+    configurations {
+        compileOnly {
+            extendsFrom annotationProcessor
+        }
+    }
+
+    dependencies {
+
+        // https://mvnrepository.com/artifact/io.opentracing.contrib/opentracing-spring-jaeger-starter
+        compile group: 'io.opentracing.contrib', name: 'opentracing-spring-jaeger-cloud-starter', version: '3.1.1'
+        // or
+//        compile group: 'io.opentracing.contrib', name: 'opentracing-spring-cloud-starter', version: '0.5.3'
+//        compile group: 'io.opentracing.contrib', name: 'opentracing-spring-jaeger-starter', version: '3.1.1'
+
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+        testImplementation('org.springframework.boot:spring-boot-starter-test') {
+            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+}
+
+
